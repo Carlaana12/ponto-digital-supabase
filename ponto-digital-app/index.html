@@ -4,15 +4,15 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sistema de Ponto Digital - Supabase</title>
+    
+    <!-- NOVO: Adiciona o Favicon usando a logomarca Cia -->
+    <link rel="icon" type="image/png" href="imgs/logocia.png"> 
+    
     <!-- Carrega o Tailwind CSS para estilização -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        /* Define a fonte Inter (melhor visualização) */
-        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
-        /* Esconde temporariamente a div app para evitar Cumulative Layout Shift (CLS) */
-        #app { min-height: 80vh; opacity: 0; transition: opacity 0.5s; }
-        #app.loaded { opacity: 1; }
-    </style>
+    
+    <!-- Link para o arquivo CSS externo (styles/main.css) -->
+    <link rel="stylesheet" href="styles/main.css">
 </head>
 <body class="min-h-screen p-4 md:p-8">
 
@@ -98,8 +98,9 @@
             const type = error ? 'error' : 'success';
             const message = (error instanceof Error) ? error.message : error || successMessage;
             
+            // CORES ALTERADAS: Verde para sucesso, Roxo para erro
             const classes = type === 'success'
-                ? 'bg-green-100 border-l-4 border-green-500 text-green-700'
+                ? 'bg-green-100 border-l-4 border-green-600 text-green-700'
                 : 'bg-red-100 border-l-4 border-red-500 text-red-700';
             const icon = type === 'success' ? `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><polyline points="20 6 9 17 4 12"></polyline></svg>` 
                                              : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
@@ -345,26 +346,29 @@
             const btnText = loading ? 'Aguarde...' : (isLoginView ? 'Entrar' : 'Cadastrar');
 
             return `
-                <div class="bg-white p-8 md:p-10 rounded-xl shadow-2xl max-w-md mx-auto mt-10 border-t-4 border-blue-500">
-                    <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">${isLoginView ? 'Login' : 'Cadastro'}</h1>
+                <div class="bg-white p-8 md:p-10 rounded-xl shadow-2xl max-w-md mx-auto mt-10 border-t-4 border-green-600">
+                    <div class="mb-6 text-center">
+                        <img src="imgs/logocia.png" alt="Logomarca da Cia" class="mx-auto h-12 mb-3">
+                        <h1 class="text-3xl font-bold text-center text-green-700">${isLoginView ? 'Login' : 'Cadastro'}</h1>
+                    </div>
                     
                     <form id="auth-form" class="space-y-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Email:</label>
                             <input type="email" id="auth-email" value="${authData.email}" required
                                 placeholder="seu.email@empresa.com"
-                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
                             />
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700">Senha:</label>
                             <input type="password" id="auth-password" value="${authData.password}" required
                                 placeholder="Mínimo 6 caracteres"
-                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
                             />
                         </div>
                         <button type="submit" id="auth-submit-btn"
-                            class="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition duration-150 shadow-md ${loading ? 'opacity-50 cursor-not-allowed' : ''}"
+                            class="w-full py-3 bg-green-600 text-white font-bold rounded-lg hover:bg-green-700 transition duration-150 shadow-md ${loading ? 'opacity-50 cursor-not-allowed' : ''}"
                             ${loading || !authData.email || !authData.password ? 'disabled' : ''}
                         >
                             ${btnText}
@@ -373,7 +377,7 @@
 
                     <p class="mt-6 text-center text-sm text-gray-600">
                         ${isLoginView ? 'Novo por aqui? ' : 'Já tem uma conta? '}
-                        <button id="toggle-auth-view" class="text-blue-600 font-medium hover:underline" ${loading ? 'disabled' : ''}>
+                        <button id="toggle-auth-view" class="text-green-600 font-medium hover:underline" ${loading ? 'disabled' : ''}>
                             ${isLoginView ? 'Cadastre-se' : 'Fazer Login'}
                         </button>
                     </p>
@@ -385,7 +389,8 @@
             const isManager = role === 'GESTOR';
             const displayedRecords = pontoRecords; 
 
-            let btnColorClass = 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-300';
+            // CORES ALTERADAS: Verde Cia para ações principais, Roxo para Gerente
+            let btnColorClass = 'bg-green-600 hover:bg-green-700 focus:ring-green-300';
             if (currentAction === 'Almoço Início') btnColorClass = 'bg-yellow-500 hover:bg-yellow-600 focus:ring-yellow-300';
             if (currentAction === 'Almoço Fim') btnColorClass = 'bg-green-600 hover:bg-green-700 focus:ring-green-400';
             if (currentAction === 'Saída') btnColorClass = 'bg-red-500 hover:bg-red-600 focus:ring-red-300';
@@ -394,10 +399,10 @@
             return `
                 <div class="space-y-8 max-w-4xl mx-auto">
                     <!-- Detalhes do Usuário e Status -->
-                    <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-blue-500">
+                    <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-green-600">
                         <div class="flex justify-between items-center mb-4 border-b pb-3">
                             <h2 class="text-2xl font-bold text-gray-800 flex items-center">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 mr-2 text-blue-500"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                <img src="imgs/logocia.png" alt="Logo Cia" class="h-6 w-6 mr-2">
                                 Bem-vindo(a), ${user.email}
                             </h2>
                             <button id="logout-btn" class="flex items-center text-sm text-red-500 hover:text-red-700 font-medium p-2 rounded-lg transition" ${loading ? 'disabled' : ''}>
@@ -406,7 +411,7 @@
                             </button>
                         </div>
                         <p class="text-md text-gray-600">
-                            <span class="font-semibold">Cargo:</span> <span class="font-bold ${isManager ? 'text-purple-600' : 'text-blue-500'}">${role}</span>
+                            <span class="font-semibold">Cargo:</span> <span class="font-bold ${isManager ? 'text-purple-600' : 'text-green-500'}">${role}</span>
                         </p>
                         <p class="text-xs text-gray-400 mt-1 truncate">ID: ${user.id}</p>
                     </div>
@@ -418,7 +423,7 @@
                         <div class="mb-4 p-3 bg-white border border-dashed border-gray-300 rounded-lg">
                             <p class="text-sm text-gray-500 font-medium flex items-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-2 text-gray-500"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                Próxima Ação: <span class="ml-2 font-bold text-lg text-blue-600">${currentAction}</span>
+                                Próxima Ação: <span class="ml-2 font-bold text-lg text-green-600">${currentAction}</span>
                             </p>
                         </div>
 
@@ -428,7 +433,7 @@
                                 Rede/Localização (SSID Simulado):
                             </label>
                             <input type="text" id="wifi-ssid" value="${wifiSSID}" placeholder="Ex: Escritório Principal"
-                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-green-500 focus:border-green-500"
                             />
                             <p class="text-xs text-red-500 mt-1">*Nota: Aplicativos web não podem acessar o Wi-Fi real por segurança. Este é um campo de input manual.</p>
                         </div>
@@ -445,7 +450,7 @@
                     
                     <!-- Painel do Gerente (Exclusivo para GESTOR) -->
                     ${isManager ? `
-                        <div class="bg-purple-50 p-6 rounded-xl shadow-lg border-t-4 border-purple-500">
+                        <div class="bg-purple-50 p-6 rounded-xl shadow-lg border-t-4 border-purple-600">
                             <h3 class="text-xl font-bold text-purple-700 mb-3 flex items-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                                 Painel de Gerenciamento
@@ -473,7 +478,7 @@
                             ${displayedRecords.map(record => {
                                 const timestampFormatado = formatTimestamp(record.created_at);
                                 
-                                let color = 'border-blue-300 text-blue-800 bg-blue-50';
+                                let color = 'border-green-300 text-green-800 bg-green-50';
                                 if (record.acao === 'Saída') color = 'border-red-300 text-red-800 bg-red-50';
                                 if (record.acao.includes('Almoço')) color = 'border-yellow-300 text-yellow-800 bg-yellow-50';
 
@@ -517,7 +522,7 @@
             let contentHTML = '';
             if (loading && !user) {
                  // Mostra tela de carregamento na inicialização
-                 contentHTML = `<div class="text-center mt-20"><div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-blue-500 border-t-transparent"></div><p class="mt-4 text-gray-600">Carregando...</p></div>`;
+                 contentHTML = `<div class="text-center mt-20"><div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-green-500 border-t-transparent"></div><p class="mt-4 text-gray-600">Carregando...</p></div>`;
             } else if (user && role !== 'GUEST') {
                 contentHTML = renderDashboard();
             } else {
@@ -526,7 +531,10 @@
 
             appEl.innerHTML = `
                 <header class="text-center mb-8">
-                    <h1 class="text-4xl font-extrabold text-blue-800">Sistema de Ponto 2.0</h1>
+                    <div class="mb-4">
+                        <img src="imgs/logocia.png" alt="Logomarca da Cia" class="mx-auto h-16">
+                    </div>
+                    <h1 class="text-4xl font-extrabold text-green-800">Sistema de Ponto 2.0</h1>
                     <p class="text-gray-500 mt-1">Supabase Auth & RLS</p>
                 </header>
                 ${messagesHTML}
@@ -543,7 +551,7 @@
                 authForm.addEventListener('submit', handleAuth);
             }
             
-            // CONEXÃO ALTERNATIVA: Usa o listener do BOTÃO (Plano B)
+            // CONEXÃO ALTERNATIVA: Usa o listener do BOTão (Plano B)
             const authButton = document.getElementById('auth-submit-btn');
             if (authButton) {
                 authButton.removeEventListener('click', handleAuthButtonClick);

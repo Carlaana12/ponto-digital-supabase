@@ -1,0 +1,22 @@
+/*
+ * Este arquivo contém o CSS de estilo que foi removido do <style> no index.html
+ * Ele é usado para controle de fontes e o efeito de carregamento da aplicação.
+ */
+
+/* Define a fonte Inter (melhor visualização) */
+body { 
+    font-family: 'Inter', sans-serif; 
+    background-color: #f7f9fb; 
+}
+
+/* Esconde temporariamente a div #app para evitar Cumulative Layout Shift (CLS) */
+#app { 
+    min-height: 80vh; 
+    opacity: 0; 
+    transition: opacity 0.5s; 
+}
+
+/* Classe adicionada por JavaScript quando o conteúdo está pronto */
+#app.loaded { 
+    opacity: 1; 
+}
