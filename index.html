@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Ponto Digital - Supabase</title>
+    <!-- Carrega o Tailwind CSS para estilização -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Define a fonte Inter (melhor visualização) */
+        body { font-family: 'Inter', sans-serif; background-color: #f7f9fb; }
+        /* Esconde temporariamente a div app para evitar Cumulative Layout Shift (CLS) */
+        #app { min-height: 80vh; opacity: 0; transition: opacity 0.5s; }
+        #app.loaded { opacity: 1; }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <!-- Conteúdo da aplicação -->
+    </div>
+
+    <!-- Supabase Client SDK -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
+    <script type="module">
+        // --- 1. CONFIGURAÇÃO (PREENCHA AQUI!) ---
+        
+        // Insira o URL do seu projeto Supabase (https://<ref>.supabase.co)
+        const SUPABASE_URL = 'https://kalhrkrevlcurpbisook.supabase.co'; 
+        
+        // Insira sua chave 'anon' (pública)
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImthbGhya3JldmxjdXJwYmlzb29rIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg2MzQxMDIsImV4cCI6MjA3NDIxMDEwMn0.nePj6cGIHmHUKabSCPgo8vcTz6jNmaaCBTOds8DF2_g';
+        
+        // Inicializa o cliente Supabase
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+            // AJUSTE CRÍTICO PARA LOCALHOST: Garante que a autenticação funcione em ambientes locais
+            auth: {
+                persistSession: true, 
+                autoRefreshToken: true,
+                storageKey: 'supabase.auth.local',
+                detectSessionInUrl: true,
+                flowType: 'pkce',
+            }
+        });
+
+        // Nome da tabela no seu banco de dados
+        const TABLE_NAME = 'registro_ponto'; 
+
+        // Email do Gerente para atribuição de função (Usado no SQL Trigger e no JS)
+        const MANAGER_EMAIL = 'carla.accp64@gmail.com'; 
+
+        // --- 2. ESTADOS GLOBAIS E VARIÁVEIS ---
+        
+        let user = null;
+        let role = 'GUEST'; // 'GESTOR', 'USUARIO', 'GUEST'
+        let pontoRecords = [];
+        let loading = false;
+        let error = null;
+        let successMessage = null;
+        let currentAction = 'Entrada';
+        let wifiSSID = 'Rede-Corporativa-Simulada'; 
+        let isLoginView = true;
+        let authData = { email: '', password: '' };
+
+        // --- 3. FUNÇÕES DE UTILIDADE E LÓGICA ---
+        
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            const date = new Date(timestamp);
+            const dateStr = date.toLocaleDateString('pt-BR');
+            const timeStr = date.toLocaleTimeString('pt-BR');
+            return `${dateStr} às ${timeStr}`;
+        }
+        
+        function getTodayRecords(records, targetUserId) {
+            const todayKey = new Date().toISOString().split('T')[0];
+            return records
+                .filter(r => r.usuario_id === targetUserId && r.data_ponto === todayKey)
+                .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
+        }
+
+        function getNextAction(todayRecords) {
+            const lastAction = todayRecords[todayRecords.length - 1]?.acao;
+            
+            switch (lastAction) {
+                case 'Entrada': return 'Almoço Início';
+                case 'Almoço Início': return 'Almoço Fim';
+                case 'Almoço Fim': return 'Saída';
+                case 'Saída': return 'Jornada Concluída'; 
+                default: return 'Entrada';
+            }
+        }
+        
+        function renderMessages() {
+            if (!error && !successMessage) return '';
+            
+            const type = error ? 'error' : 'success';
+            const message = (error instanceof Error) ? error.message : error || successMessage;
+            
+            const classes = type === 'success'
+                ? 'bg-green-100 border-l-4 border-green-500 text-green-700'
+                : 'bg-red-100 border-l-4 border-red-500 text-red-700';
+            const icon = type === 'success' ? `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><polyline points="20 6 9 17 4 12"></polyline></svg>` 
+                                             : `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>`;
+
+            return `
+                <div class="max-w-xl mx-auto p-4 rounded-lg mb-6 shadow-md ${classes}">
+                    <div class="flex items-center">
+                        ${icon}
+                        <p class="font-medium">${message}</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        /** Lógica de Exportação (GESTOR) */
+        async function handleExportCSV() {
+             if (role !== 'GESTOR') return;
+
+            loading = true;
+            error = null;
+            successMessage = null;
+            updateUI();
+
+            const { data, error: fetchError } = await supabase
+                .from(TABLE_NAME)
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (fetchError) {
+                error = new Error(`Erro ao buscar dados para exportação: ${fetchError.message}`);
+                loading = false;
+                updateUI();
+                return;
+            }
+
+            if (data.length === 0) {
+                error = "Não há dados para exportar.";
+                loading = false;
+                updateUI();
+                return;
+            }
+            
+            const headers = ['ID do Registro', 'ID do Usuário', 'Ação', 'Data/Hora de Criação', 'Data do Ponto', 'Rede Wi-Fi'];
+            
+            const csvRows = data.map(record => {
+                const safe = (text) => `"${String(text).replace(/"/g, '""')}"`;
+                const created_at = new Date(record.created_at).toLocaleString('pt-BR');
+
+                return [
+                    safe(record.id),
+                    safe(record.usuario_id),
+                    safe(record.acao),
+                    safe(created_at),
+                    safe(record.data_ponto),
+                    safe(record.rede_wifi)
+                ].join(';'); 
+            });
+
+            const csvContent = headers.join(';') + '\n' + csvRows.join('\n');
+
+            const blob = new Blob(["\ufeff", csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `registros_ponto_total_${new Date().toISOString().split('T')[0]}.csv`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            successMessage = "Planilha CSV gerada com sucesso!";
+            loading = false;
+            updateUI();
+        }
+
+        /** Registra o ponto na tabela 'registro_ponto' */
+        async function handleBaterPonto() {
+             // Captura o SSID atual do input
+            const ssidInput = document.getElementById('wifi-ssid');
+            wifiSSID = ssidInput ? ssidInput.value : 'SSID Não Informado';
+
+            if (!user || currentAction === 'Jornada Concluída') return;
+
+            loading = true;
+            error = null;
+            successMessage = null;
+            updateUI();
+
+            try {
+                const { error: insertError } = await supabase
+                    .from(TABLE_NAME)
+                    .insert({
+                        acao: currentAction,
+                        data_ponto: new Date().toISOString().split('T')[0],
+                        rede_wifi: wifiSSID,
+                    });
+
+                if (insertError) throw new Error(insertError.message);
+                
+                successMessage = `Ponto de ${currentAction} registrado com sucesso!`;
+
+            } catch (err) {
+                console.error("Erro ao registrar ponto:", err);
+                error = new Error(`Erro ao registrar ponto: ${err.message}`);
+            } finally {
+                loading = false;
+                updateUI();
+            }
+        }
+
+        /** Lógica de Logout usando Supabase Auth */
+        async function handleLogout() {
+            loading = true;
+            error = null;
+            successMessage = null;
+            updateUI();
+            try {
+                const { error: err } = await supabase.auth.signOut();
+                if (err) throw new Error(err.message);
+                successMessage = "Logout realizado com sucesso.";
+            } catch (err) {
+                error = new Error("Erro ao sair.");
+                console.error("Erro no logout:", err);
+            } finally {
+                loading = false;
+                updateUI();
+            }
+        }
+
+        /** Lógica de Login/Cadastro usando Supabase Auth */
+        async function handleAuth(e) {
+            e.preventDefault(); // Previni submissão do formulário, se aplicável
+            
+            const emailInput = document.getElementById('auth-email');
+            const passwordInput = document.getElementById('auth-password');
+            
+            if (!emailInput || !passwordInput) {
+                console.error("Formulário de autenticação não encontrado na DOM.");
+                error = new Error("Erro de interface. Recarregue a página.");
+                loading = false;
+                updateUI();
+                return;
+            }
+
+            authData.email = emailInput.value;
+            authData.password = passwordInput.value;
+
+            loading = true;
+            error = null;
+            successMessage = null;
+            updateUI();
+            
+            try {
+                let response;
+                if (isLoginView) {
+                    // Tenta fazer login
+                    response = await supabase.auth.signInWithPassword({
+                        email: authData.email,
+                        password: authData.password,
+                    });
+                    
+                    if (response.error) throw new Error(response.error.message);
+                    successMessage = "Login realizado com sucesso!";
+
+                } else {
+                    // Tenta se cadastrar
+                    response = await supabase.auth.signUp({
+                        email: authData.email,
+                        password: authData.password,
+                    });
+                    
+                    if (response.error) throw new Error(response.error.message);
+                    
+                    // SE CADASTRO BEM-SUCEDIDO:
+                    successMessage = "Cadastro realizado! Por favor, faça o login.";
+                    isLoginView = true; 
+                }
+            } catch (err) {
+                console.error("Erro na autenticação:", err);
+                error = new Error(`Falha na autenticação: ${err.message}.`);
+            } finally {
+                authData = { email: authData.email, password: '' }; 
+                loading = false;
+                updateUI();
+            }
+        }
+        
+        // Esta função é chamada pelo evento de clique direto no botão
+        function handleAuthButtonClick(e) {
+             e.preventDefault(); 
+             handleAuth(e);
+        }
+
+        function handleToggleAuthView() {
+            isLoginView = !isLoginView;
+            authData = { email: '', password: '' };
+            error = null;
+            successMessage = null;
+            updateUI();
+        }
+
+        /**
+         * Verifica o cargo do usuário na tabela 'usuarios'
+         */
+        async function fetchUserRole(uid) {
+            loading = true;
+            try {
+                const { data, error: err } = await supabase
+                    .from('usuarios')
+                    .select('cargo')
+                    .eq('id', uid)
+                    .single(); 
+                
+                if (err && err.code === 'PGRST116') {
+                    role = (user.email === MANAGER_EMAIL) ? 'GESTOR' : 'USUARIO';
+                    console.warn(`Perfil não encontrado. Assumindo cargo: ${role}`);
+                } else if (err) {
+                    throw new Error(err.message);
+                }
+
+                if (data && data.cargo) {
+                    role = data.cargo;
+                } else {
+                    role = (user.email === MANAGER_EMAIL) ? 'GESTOR' : 'USUARIO';
+                }
+
+            } catch (err) {
+                console.error("Erro ao buscar função:", err);
+                role = 'USUARIO'; 
+            } finally {
+                loading = false;
+                updateUI();
+            }
+        }
+        
+        // --- 4. FUNÇÕES DE RENDERIZAÇÃO E CONEXÃO DE EVENTOS (Cont.) ---
+
+        function renderAuth() {
+            const btnText = loading ? 'Aguarde...' : (isLoginView ? 'Entrar' : 'Cadastrar');
+
+            return `
+                <div class="bg-white p-8 md:p-10 rounded-xl shadow-2xl max-w-md mx-auto mt-10 border-t-4 border-blue-500">
+                    <h1 class="text-3xl font-bold text-center text-blue-600 mb-6">${isLoginView ? 'Login' : 'Cadastro'}</h1>
+                    
+                    <form id="auth-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Email:</label>
+                            <input type="email" id="auth-email" value="${authData.email}" required
+                                placeholder="seu.email@empresa.com"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700">Senha:</label>
+                            <input type="password" id="auth-password" value="${authData.password}" required
+                                placeholder="Mínimo 6 caracteres"
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                            />
+                        </div>
+                        <button type="button" id="auth-submit-btn"
+                            class="w-full py-3 bg-blue-600 text-white font-bold rounded-lg hover:bg-blue-700 transition duration-150 shadow-md ${loading ? 'opacity-50 cursor-not-allowed' : ''}"
+                            ${loading || !authData.email || !authData.password ? 'disabled' : ''}
+                        >
+                            ${btnText}
+                        </button>
+                    </form>
+
+                    <p class="mt-6 text-center text-sm text-gray-600">
+                        ${isLoginView ? 'Novo por aqui? ' : 'Já tem uma conta? '}
+                        <button id="toggle-auth-view" class="text-blue-600 font-medium hover:underline" ${loading ? 'disabled' : ''}>
+                            ${isLoginView ? 'Cadastre-se' : 'Fazer Login'}
+                        </button>
+                    </p>
+                </div>
+            `;
+        }
+        
+        function renderDashboard() {
+            const isManager = role === 'GESTOR';
+            const displayedRecords = pontoRecords; 
+
+            let btnColorClass = 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-300';
+            if (currentAction === 'Almoço Início') btnColorClass = 'bg-yellow-500 hover:bg-yellow-600 focus:ring-yellow-300';
+            if (currentAction === 'Almoço Fim') btnColorClass = 'bg-green-600 hover:bg-green-700 focus:ring-green-400';
+            if (currentAction === 'Saída') btnColorClass = 'bg-red-500 hover:bg-red-600 focus:ring-red-300';
+            if (currentAction === 'Jornada Concluída') btnColorClass = 'bg-gray-400 cursor-not-allowed';
+            
+            return `
+                <div class="space-y-8 max-w-4xl mx-auto">
+                    <!-- Detalhes do Usuário e Status -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg border-t-4 border-blue-500">
+                        <div class="flex justify-between items-center mb-4 border-b pb-3">
+                            <h2 class="text-2xl font-bold text-gray-800 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-6 h-6 mr-2 text-blue-500"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                Bem-vindo(a), ${user.email}
+                            </h2>
+                            <button id="logout-btn" class="flex items-center text-sm text-red-500 hover:text-red-700 font-medium p-2 rounded-lg transition" ${loading ? 'disabled' : ''}>
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-1"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                                Sair
+                            </button>
+                        </div>
+                        <p class="text-md text-gray-600">
+                            <span class="font-semibold">Cargo:</span> <span class="font-bold ${isManager ? 'text-purple-600' : 'text-blue-500'}">${role}</span>
+                        </p>
+                        <p class="text-xs text-gray-400 mt-1 truncate">ID: ${user.id}</p>
+                    </div>
+
+                    <!-- Seção de Bater Ponto -->
+                    <div class="bg-gray-50 p-6 rounded-xl shadow-md">
+                        <h3 class="text-xl font-semibold mb-4 text-gray-700">Registrar Ponto</h3>
+                        
+                        <div class="mb-4 p-3 bg-white border border-dashed border-gray-300 rounded-lg">
+                            <p class="text-sm text-gray-500 font-medium flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-2 text-gray-500"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                                Próxima Ação: <span class="ml-2 font-bold text-lg text-blue-600">${currentAction}</span>
+                            </p>
+                        </div>
+
+                        <div class="mb-6">
+                            <label class="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-2"><path d="M12 20.5v-9"></path><path d="M16 14a4 4 0 0 0-4-4 4 4 0 0 0-4 4"></path><path d="M21 9V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v3"></path><path d="M17 9v2"></path><path d="M7 9v2"></path></svg>
+                                Rede/Localização (SSID Simulado):
+                            </label>
+                            <input type="text" id="wifi-ssid" value="${wifiSSID}" placeholder="Ex: Escritório Principal"
+                                class="w-full p-2 border border-gray-300 rounded-lg focus:ring-blue-500 focus:border-blue-500"
+                            />
+                            <p class="text-xs text-red-500 mt-1">*Nota: Aplicativos web não podem acessar o Wi-Fi real por segurança. Este é um campo de input manual.</p>
+                        </div>
+
+                        <button id="bater-ponto-btn" data-next-action="${currentAction}"
+                            class="w-full py-4 text-xl font-bold text-white rounded-xl transition ease-in-out duration-200 shadow-lg 
+                                ${btnColorClass} 
+                                ${currentAction === 'Jornada Concluída' || loading ? 'opacity-50 cursor-not-allowed' : 'hover:shadow-xl'}"
+                            ${currentAction === 'Jornada Concluída' || loading ? 'disabled' : ''}
+                        >
+                            ${loading ? 'Processando...' : currentAction === 'Jornada Concluída' ? 'Jornada Concluída' : `Registrar ${currentAction}`}
+                        </button>
+                    </div>
+                    
+                    <!-- Painel do Gerente (Exclusivo para GESTOR) -->
+                    ${isManager ? `
+                        <div class="bg-purple-50 p-6 rounded-xl shadow-lg border-t-4 border-purple-500">
+                            <h3 class="text-xl font-bold text-purple-700 mb-3 flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
+                                Painel de Gerenciamento
+                            </h3>
+                            <p class="text-gray-600 mb-4">Acesso a todos os registros (${pontoRecords.length} no total).</p>
+                            <button id="export-csv-btn"
+                                class="flex items-center bg-purple-600 text-white font-semibold py-2 px-4 rounded-lg hover:bg-purple-700 transition duration-150 shadow-md ${loading || pontoRecords.length === 0 ? 'opacity-50 disabled:opacity-50' : ''}"
+                                ${loading || pontoRecords.length === 0 ? 'disabled' : ''}
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-5 h-5 mr-2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                Baixar Planilha Completa (.csv)
+                            </button>
+                        </div>
+                    ` : ''}
+
+                    <!-- Histórico de Registros -->
+                    <div class="bg-white p-6 rounded-xl shadow-lg">
+                        <h3 class="text-2xl font-bold text-gray-800 mb-4 border-b pb-2">
+                            ${isManager ? 'Todos os Registros' : 'Meus Registros'}
+                        </h3>
+                        
+                        <div id="historico-list" class="space-y-3 max-h-96 overflow-y-auto">
+                            ${(loading && displayedRecords.length === 0) ? `<p class="text-center text-gray-500 p-4">Carregando registros...</p>` : ''}
+                            ${(!loading && displayedRecords.length === 0) ? `<p class="text-center text-gray-500 p-4">Nenhum registro encontrado. ${isManager ? 'Não há registros no sistema.' : 'Bata seu primeiro ponto!'}</p>` : ''}
+                            ${displayedRecords.map(record => {
+                                const timestampFormatado = formatTimestamp(record.created_at);
+                                
+                                let color = 'border-blue-300 text-blue-800 bg-blue-50';
+                                if (record.acao === 'Saída') color = 'border-red-300 text-red-800 bg-red-50';
+                                if (record.acao.includes('Almoço')) color = 'border-yellow-300 text-yellow-800 bg-yellow-50';
+
+                                return `
+                                    <div class="p-4 rounded-lg border-l-4 shadow-sm ${color} flex justify-between items-center">
+                                        <div>
+                                            <p class="font-bold text-lg">${record.acao}</p>
+                                            <p class="text-sm font-medium flex items-center">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-4 h-4 mr-1 text-gray-600"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                                ${timestampFormatado}
+                                            </p>
+                                            <p class="text-xs text-gray-500 flex items-center mt-1">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="w-3 h-3 mr-1"><path d="M17 17l5 5"></path><path d="M10 11l4-4"></path><path d="M12 21.5V10.5M12 10.5a5.5 5.5 0 0 1-5.5-5.5V5a2.5 2.5 0 0 1 5 0v.5M12 10.5a5.5 5.5 0 0 0 5.5-5.5V5a2.5 2.5 0 0 0-5 0v.5"></path></svg>
+                                                Rede: ${record.rede_wifi}
+                                            </p>
+                                        </div>
+                                        ${isManager ? `
+                                            <div class="text-right">
+                                                <p class="text-xs font-semibold text-gray-600">ID Usuário:</p>
+                                                <p class="text-xs text-gray-500 truncate max-w-[100px]">${record.usuario_id}</p>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+
+                </div>
+            `;
+        }
+        
+        /** Controla o fluxo de renderização e conecta os event listeners */
+        function updateUI() {
+            const appEl = document.getElementById('app');
+            // Remove a classe de carregamento para mostrar a UI
+            appEl.classList.add('loaded');
+            
+            const messagesHTML = renderMessages();
+            
+            let contentHTML = '';
+            if (loading && !user) {
+                 // Mostra tela de carregamento na inicialização
+                 contentHTML = `<div class="text-center mt-20"><div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-blue-500 border-t-transparent"></div><p class="mt-4 text-gray-600">Carregando...</p></div>`;
+            } else if (user && role !== 'GUEST') {
+                contentHTML = renderDashboard();
+            } else {
+                contentHTML = renderAuth();
+            }
+
+            appEl.innerHTML = `
+                <header class="text-center mb-8">
+                    <h1 class="text-4xl font-extrabold text-blue-800">Sistema de Ponto 2.0</h1>
+                    <p class="text-gray-500 mt-1">Supabase Auth & RLS</p>
+                </header>
+                ${messagesHTML}
+                ${contentHTML}
+            `;
+            
+            // --- Conecta Eventos (Após Renderização) ---
+            
+            // CONEXÃO PRINCIPAL: Usa o listener do FORMULÁRIO para submeter dados
+            const authForm = document.getElementById('auth-form');
+            if (authForm) {
+                // Remove listener anterior para evitar duplicidade
+                authForm.removeEventListener('submit', handleAuth);
+                authForm.addEventListener('submit', handleAuth);
+            }
+            
+            // CONEXÃO ALTERNATIVA: Usa o listener do BOTÃO (Plano B)
+            const authButton = document.getElementById('auth-submit-btn');
+            if (authButton) {
+                 authButton.removeEventListener('click', handleAuthButtonClick);
+                 authButton.addEventListener('click', handleAuthButtonClick);
+            }
+            
+            const toggleBtn = document.getElementById('toggle-auth-view');
+            if (toggleBtn) toggleBtn.onclick = handleToggleAuthView;
+            
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) logoutBtn.onclick = handleLogout;
+            
+            const pontoBtn = document.getElementById('bater-ponto-btn');
+            if (pontoBtn) pontoBtn.onclick = handleBaterPonto;
+            
+            const ssidInput = document.getElementById('wifi-ssid');
+            if (ssidInput) ssidInput.onchange = (e) => { wifiSSID = e.target.value; };
+
+            const exportBtn = document.getElementById('export-csv-btn');
+            if (exportBtn) exportBtn.onclick = handleExportCSV;
+        }
+
+        // --- 5. LISTENER DE AUTENTICAÇÃO E REALTIME (Supabase) ---
+
+        // Ouve mudanças de estado de autenticação (login/logout)
+        supabase.auth.onAuthStateChange((event, session) => {
+            user = session?.user || null;
+            if (user) {
+                fetchUserRole(user.id);
+                startPontoListener();
+            } else {
+                role = 'GUEST';
+                loading = false;
+                pontoRecords = [];
+                updateUI();
+            }
+        });
+        
+        // Ouve alterações na tabela de ponto em tempo real
+        function startPontoListener() {
+            // Remove o listener anterior para evitar duplicidade
+            supabase.removeAllChannels(); 
+            
+            // Inicia um novo canal para escutar a tabela
+            const realtimeChannel = supabase
+                .channel('ponto_changes')
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: TABLE_NAME },
+                    (payload) => {
+                        // Quando há uma mudança, simplesmente recarregamos os dados.
+                        fetchPontoRecords();
+                    }
+                )
+                .subscribe();
+
+            // Busca inicial dos dados
+            fetchPontoRecords();
+        }
+
+        async function fetchPontoRecords() {
+            loading = true;
+            updateUI();
+            
+            // Query para buscar registros (RLS cuida da filtragem por usuário/gerente)
+            const { data, error: fetchError } = await supabase
+                .from(TABLE_NAME)
+                .select(`*`)
+                .order('created_at', { ascending: false });
+
+            if (fetchError) {
+                console.error("Erro ao carregar registros:", fetchError);
+                // Assume que o RLS pode estar bloqueando a leitura, mas mantém o erro visível
+                error = new Error(`Erro ao carregar registros. Verifique suas regras RLS: ${fetchError.message}`);
+                pontoRecords = [];
+            } else {
+                pontoRecords = data || [];
+                error = null;
+            }
+
+            const todayRecords = getTodayRecords(pontoRecords, user?.id);
+            currentAction = getNextAction(todayRecords);
+            loading = false;
+            updateUI();
+        }
+
+        // Garante que o estado inicial do usuário seja carregado ao iniciar a página.
+        async function initializeApp() {
+             // Marca a UI como carregando antes de qualquer operação
+            loading = true;
+            updateUI();
+            
+            const { data: { user: currentUser } } = await supabase.auth.getUser();
+            if (currentUser) {
+                user = currentUser;
+                // Busca o cargo e inicia o listener de dados.
+                await fetchUserRole(user.id);
+                startPontoListener();
+            } else {
+                // Se não houver usuário logado, apenas para de carregar e mostra a tela de login.
+                loading = false;
+                updateUI();
+            }
+        }
+        
+        // Inicializa a aplicação
+        initializeApp();
+
+    </script>
+</body>
+</html>
