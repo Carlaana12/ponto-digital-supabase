@@ -14,7 +14,7 @@
 <body class="min-h-screen p-4 md:p-8">
 
     <div id="app" class="max-w-4xl mx-auto">
-        </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
@@ -67,15 +67,19 @@
             return `${dateStr} às ${timeStr}`;
         }
         
+        /**
+         * CORRIGIDO: Agora compara apenas a data (sem hora) da coluna 'data_hora'.
+         */
         function getTodayRecords(records, targetUserId) {
             const todayKey = new Date().toISOString().split('T')[0];
             return records
-                .filter(r => r.usuario_id === targetUserId && r.data_ponto === todayKey)
-                .sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime()); // CORRIGIDO: usa data_hora
+                // Filtra comparando a parte da data (YYYY-MM-DD) do timestamp 'data_hora'
+                .filter(r => r.usuario_id === targetUserId && r.data_hora?.split('T')[0] === todayKey)
+                .sort((a, b) => new Date(a.data_hora).getTime() - new Date(b.data_hora).getTime());
         }
 
         function getNextAction(todayRecords) {
-            const lastAction = todayRecords[todayRecords.length - 1]?.tipo; // Corrigido: usa tipo (supondo que "ação" é "tipo")
+            const lastAction = todayRecords[todayRecords.length - 1]?.tipo;
             
             switch (lastAction) {
                 case 'Entrada': return 'Almoço Início';
@@ -110,7 +114,7 @@
 
         /** Lógica de Exportação (GESTOR) */
         async function handleExportCSV() {
-             if (role !== 'GESTOR') return;
+                if (role !== 'GESTOR') return;
 
             loading = true;
             error = null;
@@ -120,7 +124,7 @@
             const { data, error: fetchError } = await supabase
                 .from(TABLE_NAME)
                 .select('*')
-                .order('data_hora', { ascending: false }); // CORRIGIDO: usa data_hora
+                .order('data_hora', { ascending: false });
 
             if (fetchError) {
                 error = new Error(`Erro ao buscar dados para exportação: ${fetchError.message}`);
@@ -136,18 +140,18 @@
                 return;
             }
             
-            const headers = ['ID do Registro', 'ID do Usuário', 'Ação', 'Data/Hora de Criação', 'Data do Ponto', 'Rede Wi-Fi', 'Latitude', 'Longitude'];
+            // CORRIGIDO: Removida a coluna 'Data do Ponto' do CSV.
+            const headers = ['ID do Registro', 'ID do Usuário', 'Ação', 'Data/Hora de Criação', 'Rede Wi-Fi', 'Latitude', 'Longitude'];
             
             const csvRows = data.map(record => {
                 const safe = (text) => `"${String(text).replace(/"/g, '""')}"`;
-                const data_hora = new Date(record.data_hora).toLocaleString('pt-BR'); // CORRIGIDO: usa data_hora
+                const data_hora = new Date(record.data_hora).toLocaleString('pt-BR');
 
                 return [
                     safe(record.id),
                     safe(record.usuario_id),
-                    safe(record.tipo), // Corrigido: usa tipo (supondo que "acao" é "tipo")
+                    safe(record.tipo),
                     safe(data_hora),
-                    safe(record.data_ponto || 'N/A'),
                     safe(record.rede_wifi || 'N/A'),
                     safe(record.latitude || 'N/A'),
                     safe(record.longitude || 'N/A')
@@ -171,7 +175,9 @@
             updateUI();
         }
 
-        /** Registra o ponto na tabela 'registro_ponto' */
+        /** * Registra o ponto na tabela 'registro_ponto', obtendo localização e Wi-Fi. 
+         * CORRIGIDO: Removida a coluna 'data_ponto' da inserção.
+         */
         async function handleBaterPonto() {
             const ssidInput = document.getElementById('wifi-ssid');
             wifiSSID = ssidInput ? ssidInput.value : 'SSID Não Informado';
@@ -183,31 +189,66 @@
             successMessage = null;
             updateUI();
 
-            try {
-                // A COLUNA 'acao' não existe na sua tabela. Estou usando 'tipo'
-                const { error: insertError } = await supabase
-                    .from(TABLE_NAME)
-                    .insert({
-                        tipo: currentAction, // CORRIGIDO: usa tipo
-                        data_ponto: new Date().toISOString().split('T')[0],
-                        data_hora: new Date().toISOString(), // Adiciona a data/hora exata
-                        rede_wifi: wifiSSID,
-                        // Assumindo que você pegará lat/long aqui. Por enquanto, valores nulos.
-                        latitude: null, 
-                        longitude: null,
-                    });
-
-                if (insertError) throw new Error(insertError.message);
-                
-                successMessage = `Ponto de ${currentAction} registrado com sucesso!`;
-
-            } catch (err) {
-                console.error("Erro ao registrar ponto:", err);
-                error = new Error(`Erro ao registrar ponto: ${err.message}`);
-            } finally {
+            // 1. OBTENÇÃO DA LOCALIZAÇÃO (Geolocalização)
+            if (!navigator.geolocation) {
+                error = new Error('Geolocalização não é suportada por este navegador.');
                 loading = false;
                 updateUI();
+                return;
             }
+
+            // A função getCurrentPosition é assíncrona e usa callbacks
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const latitude = position.coords.latitude;
+                    const longitude = position.coords.longitude;
+
+                    try {
+                        // 2. INSERÇÃO NO SUPABASE com os novos dados
+                        const { error: insertError } = await supabase
+                            .from(TABLE_NAME) // registro_ponto
+                            .insert({
+                                usuario_id: user.id, // ID do usuário, conforme sua tabela
+                                tipo: currentAction,
+                                // data_ponto foi REMOVIDA. Usamos apenas data_hora.
+                                data_hora: new Date().toISOString(), // TIMESTAMP atual (data e hora)
+                                rede_wifi: wifiSSID,
+                                latitude: latitude, 
+                                longitude: longitude,
+                            });
+
+                        if (insertError) throw new Error(insertError.message);
+                        
+                        successMessage = `Ponto de ${currentAction} registrado! (Lat: ${latitude.toFixed(4)}, Long: ${longitude.toFixed(4)})`;
+
+                    } catch (err) {
+                        console.error("Erro ao registrar ponto:", err);
+                        error = new Error(`Falha no registro: ${err.message}`);
+                    } finally {
+                        loading = false;
+                        updateUI();
+                    }
+                }, 
+                // Função de erro da Geolocalização
+                (geoError) => {
+                    console.error("Erro de geolocalização:", geoError);
+                    let errMsg = 'Não foi possível obter a localização.';
+                    if (geoError.code === geoError.PERMISSION_DENIED) {
+                        errMsg = 'Permissão de localização negada. O ponto NÃO foi registrado.';
+                    } else if (geoError.code === geoError.TIMEOUT) {
+                         errMsg = 'Tempo limite excedido ao buscar a localização.';
+                    }
+                    error = new Error(errMsg);
+                    loading = false;
+                    updateUI();
+                },
+                // Opções da Geolocalização
+                {
+                    enableHighAccuracy: true,
+                    timeout: 5000,
+                    maximumAge: 0
+                }
+            );
         }
 
         /** Lógica de Logout usando Supabase Auth */
@@ -237,10 +278,10 @@
             const passwordInput = document.getElementById('auth-password');
             
             if (!emailInput || !passwordInput || !emailInput.value || !passwordInput.value) {
-                 error = new Error("Preencha e-mail e senha.");
-                 loading = false;
-                 updateUI();
-                 return;
+                error = new Error("Preencha e-mail e senha.");
+                loading = false;
+                updateUI();
+                return;
             }
 
             authData.email = emailInput.value;
@@ -287,8 +328,8 @@
         }
         
         function handleAuthButtonClick(e) {
-             e.preventDefault(); 
-             handleAuth(e);
+            e.preventDefault(); 
+            handleAuth(e);
         }
 
         function handleToggleAuthView() {
@@ -464,11 +505,11 @@
                             ${(loading && displayedRecords.length === 0) ? `<p class="text-center text-gray-500 p-4">Carregando registros...</p>` : ''}
                             ${(!loading && displayedRecords.length === 0) ? `<p class="text-center text-gray-500 p-4">Nenhum registro encontrado. ${isManager ? 'Não há registros no sistema.' : 'Bata seu primeiro ponto!'}</p>` : ''}
                             ${displayedRecords.map(record => {
-                                const timestampFormatado = formatTimestamp(record.data_hora); // CORRIGIDO: usa data_hora
+                                const timestampFormatado = formatTimestamp(record.data_hora);
                                 
                                 let color = 'border-green-300 text-green-800 bg-green-50';
-                                if (record.tipo === 'Saída') color = 'border-red-300 text-red-800 bg-red-50'; // CORRIGIDO: usa tipo
-                                if (record.tipo?.includes('Almoço')) color = 'border-yellow-300 text-yellow-800 bg-yellow-50'; // CORRIGIDO: usa tipo
+                                if (record.tipo === 'Saída') color = 'border-red-300 text-red-800 bg-red-50';
+                                if (record.tipo?.includes('Almoço')) color = 'border-yellow-300 text-yellow-800 bg-yellow-50';
 
                                 return `
                                     <div class="p-4 rounded-lg border-l-4 shadow-sm ${color} flex justify-between items-center">
@@ -509,7 +550,7 @@
             
             let contentHTML = '';
             if (loading && !user) {
-                 contentHTML = `<div class="text-center mt-20"><div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-green-500 border-t-transparent"></div><p class="mt-4 text-gray-600">Carregando...</p></div>`;
+                contentHTML = `<div class="text-center mt-20"><div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full border-green-500 border-t-transparent"></div><p class="mt-4 text-gray-600">Carregando...</p></div>`;
             } else if (user && role !== 'GUEST') {
                 contentHTML = renderDashboard();
             } else {
@@ -529,14 +570,12 @@
             
             // --- Conecta Eventos (Após Renderização) ---
             
-            // CONEXÃO PRINCIPAL: Usa o listener do FORMULÁRIO (mais robusto para inputs)
             const authForm = document.getElementById('auth-form');
             if (authForm) {
                 authForm.removeEventListener('submit', handleAuth);
                 authForm.addEventListener('submit', handleAuth);
             }
             
-            // CONEXÃO ALTERNATIVA: Usa o listener do BOTão (Plano B)
             const authButton = document.getElementById('auth-submit-btn');
             if (authButton) {
                 authButton.removeEventListener('click', handleAuthButtonClick);
@@ -598,7 +637,7 @@
             const { data, error: fetchError } = await supabase
                 .from(TABLE_NAME)
                 .select(`*`)
-                .order('data_hora', { ascending: false }); // CORRIGIDO: usa data_hora
+                .order('data_hora', { ascending: false });
 
             if (fetchError) {
                 console.error("Erro ao carregar registros:", fetchError);
@@ -634,5 +673,25 @@
         initializeApp();
 
     </script>
+    
+    <style>
+        /* Define a fonte Inter (melhor visualização) */
+        body { 
+            font-family: 'Inter', sans-serif; 
+            background-color: #f7f9fb; 
+        }
+
+        /* Esconde temporariamente a div #app para evitar Cumulative Layout Shift (CLS) */
+        #app { 
+            min-height: 80vh; 
+            opacity: 0; 
+            transition: opacity 0.5s; 
+        }
+
+        /* Classe adicionada por JavaScript quando o conteúdo está pronto */
+        #app.loaded { 
+            opacity: 1; 
+        }
+    </style>
 </body>
 </html>
